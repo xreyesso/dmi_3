@@ -214,7 +214,7 @@ knn_model <- train(diagnosis ~ ., data = train_data, method = "knn",
 # Print the best value for K 
 print(knn_model$bestTune) # The best value for K is 15
 
-# Predict on test data
+# Predict on test data. Use probability output for a smoother ROC curve
 predictions_knn <- predict(knn_model, newdata = test_data, type = "prob")
 
 # Convert probabilities into diagnosis labels
@@ -228,8 +228,9 @@ print(confusion_matrix_knn)
 
 # Generate ROC curve for KNN
 roc_curve_knn <- roc(as.numeric(test_data$diagnosis)-1, predictions_knn[,2])
-plot(roc_curve_knn, col = "#ca3517", main = "ROC Curve for the KNN model") # The "curve" looks like this because our model outputs discrete labels ("M" or "B") instead of continuous values
+plot(roc_curve_knn, col = "#ca3517", main = "ROC Curve for the KNN model") 
 auc(roc_curve_knn) # The area under the ROC curve is 0.9866
+
 ```
 We will next use a decision tree as model. We have already have done an important part of the work, since we have explored, cleaned, normalized and split the data.
 ```{r}
@@ -264,7 +265,7 @@ print(decision_tree_model$bestTune) # The best value for cp is 0.013
 # Visualize the optimized Decision Tree
 rpart.plot(decision_tree_model$finalModel, main = "Optimized Decision Tree for the Diagnosis of Breast Cancer" )
 
-# Make predictions on test_data
+# Make predictions on test_data.  Use probability output for a smoother ROC curve
 predictions_dtree <- predict(decision_tree_model, test_data[-1], type = "prob")
 
 # Convert probabilities into diagnosis labels
@@ -279,7 +280,6 @@ print(confusion_matrix_dtree)
 roc_curve_dt <- roc(as.numeric(test_data$diagnosis)-1, predictions_dtree[,2])
 plot(roc_curve_dt, col = "#063970", main = "ROC Curve for the Decision Tree model")
 auc(roc_curve_dt) # The area under the ROC curve is 0.9489
-
 
 ```
 We will next use logistic regression as model. The same remark about exploratory data analysis and data pre-processing applies as for decision tree.
@@ -305,6 +305,7 @@ roc_curve_log_reg <- roc(as.numeric(test_data$diagnosis)-1, as.numeric(predictio
 
 plot(roc_curve_log_reg, col = "#036169", main = "ROC Curve for the Logistic Regression model")
 auc(roc_curve_log_reg) # The area under the ROC curve is 0.9903
+
 ```
 
 # Exercise 3  
