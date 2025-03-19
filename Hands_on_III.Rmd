@@ -141,15 +141,20 @@ Additionally, for further information and ideas, you can check [this post](https
 # TODO: do not forget hyperparameter tuning
 # TODO: the teacher suggested logistic regression, random forest, decision tree for this exercise
 # TOOD: Answer which model performs best
+library(ggplot2)
+library(dplyr)
+library(caret)
+library(class)
 
 data_breast_cancer <- read.csv("data/breat_cancer_data.csv", sep= ",", header=TRUE)
+#data1 <- read.csv("/home/xrs/Downloads/breast+cancer+wisconsin+diagnostic/wdbc.data", sep= ",", header=TRUE)
 
 # EDA
 # 1. Check the data types
 # 2. Check for missing values
-# 3. Check for duplicate rows
-# 4. Statistics summary
-# Outliers??
+# 3. Check unique values
+# 4. Check for duplicate rows
+# 5. Statistics summary
 
 # 1. Check the data types
 str(data_breast_cancer)  # The data types look correct: id has type integer, diagnosis has type char and all the rest have type num 
@@ -158,14 +163,71 @@ str(data_breast_cancer)  # The data types look correct: id has type integer, dia
 missing_counts <- colSums(is.na(data_breast_cancer))
 print(missing_counts)    # Only column "X" has 569 NA's, no missing values in the other columns
 
-# 3. Check if there are any duplicate rows in the table
+# 3. Check unique values
+unique(data_breast_cancer$diagnosis) # There are only two values: "M" (malign) and "B" (benign)
+
+# 4. Check if there are any duplicate rows in the table
 any(duplicated(data_breast_cancer))     # returns FALSE
 
-# 4. Statistics summary
+# 5. Statistics summary
 summary(data_breast_cancer)
+
+# Look at the distribution of the target variable: diagnosis
+num_counts <- as.data.frame(table(data_breast_cancer$diagnosis)) # There are 357 benign samples and 212 malign samples
+```
+Now that we have explored the data, we proceed with the KNN algorithm
+```{r}
+## KNN algorithm
+# Drop unnecessary columns (the last one)
+data_breast_cancer <- data_breast_cancer %>% select(-id, -X)
+
+# Select only the diagnosis column and the next 10 columns (containing "..._mean")
+selected_columns <- c("diagnosis", "radius_mean", "texture_mean","perimeter_mean", "area_mean", "smoothness_mean","compactness_mean", "concavity_mean","concave.points_mean", "symmetry_mean", "fractal_dimension_mean")
+data_selected <- data_breast_cancer[selected_columns]
+
+# Convert the categorical variable "diagnosis" to the factor data type for more efficiency in memory use and better performance in ML classification models
+data_selected$diagnosis <- factor(data_selected$diagnosis)
+# Verify the conversion to factor is done correctly
+str(data_selected) # The column "diagnosis" appears now as Factor
+
+# Normalize data: this step is crucial for the KNN algorithm
+preProcessValues <- preProcess(data_selected[-1], method = c("center","scale"))
+data_normalized<- predict(preProcessValues, data_selected[-1])
+
+data_final <- cbind(diagnosis = data_selected$diagnosis, data_normalized)
+
+# Split into training and testing sets
+set.seed(100)
+trainIndex <- createDataPartition(data_final$diagnosis, p = 0.8, list = FALSE)
+train_data <- data_final[trainIndex, ]
+test_data <- data_final[-trainIndex, ]
+
+# Choose the best value of K
+k_values<- seq(1, 20, by = 2)
+# Calculate accuracy
+accuracy <- sapply(k_values, function(k) {
+  knn_model <- knn(train = train_data[-1], test = test_data[-1],
+                   cl = train_data$diagnosis, k = k)
+  mean(knn_model == test_data$diagnosis)
+})
+
+best_k <- k_values[which.max(accuracy)] # The best value for K is 9
+
+# Train final KNN model with the best K
+knn_pred <- knn(train = train_data[-1], test = test_data[-1],
+                cl = train_data$diagnosis, k = best_k)
+
+# Evaluate the model
+confusion_matrix <- confusionMatrix(knn_pred, test_data$diagnosis)
+print(confusion_matrix)
+
 
 # TODO: The column "diagnosis" has already the correct classification
 # TODO: Should I delete column "diagnosis" and "X"? Why is "X" added?
+
+
+
+# For the K-nearest neighbor algorithm, we need to first standardize the data
 
 ```
 
