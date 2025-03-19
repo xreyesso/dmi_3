@@ -141,7 +141,6 @@ Additionally, for further information and ideas, you can check [this post](https
 # TODO: do not forget hyperparameter tuning
 # TODO: the teacher suggested logistic regression, random forest, decision tree for this exercise
 # TOOD: Answer which model performs best
-library(ggplot2)
 library(dplyr)
 library(caret)
 library(class)
@@ -200,7 +199,7 @@ Now that we have explored and pre-processed the data, we proceed with the KNN al
 ```{r}
 ## KNN algorithm
 # The key hyperparameter for this model is K, the number of neighbors to consider.
-# Choose the best value of K (i.e. tune the hyperparameter K). Use a 10-fold cross-validation instead of a single split
+# Use a 10-fold cross-validation instead of a single split to choose the best value of K (i.e. tune the hyperparameter K) 
 
 # Define tuning "grid" for KNN (odd values from 1 to 20)
 tune_k_values<- expand.grid(k = seq(1, 20, by = 2))
@@ -216,47 +215,96 @@ knn_model <- train(diagnosis ~ ., data = train_data, method = "knn",
 print(knn_model$bestTune) # The best value for K is 15
 
 # Predict on test data
-knn_pred <- predict(knn_model, newdata = test_data)
+predictions_knn <- predict(knn_model, newdata = test_data, type = "prob")
 
-# Evaluate the model
-confusion_matrix_knn <- confusionMatrix(knn_pred, test_data$diagnosis)
+# Convert probabilities into diagnosis labels
+predicted_classes_knn <- ifelse(predictions_knn[,2] > 0.5, "M", "B") # Take 0.5 as threshold 
+predicted_classes_knn <- factor(predicted_classes_knn, levels = levels(test_data$diagnosis))
+
+# Evaluate the model with a confusion matrix
+# A confusion matrix expects factors, not probabilities
+confusion_matrix_knn <- confusionMatrix(predicted_classes_knn, test_data$diagnosis)
 print(confusion_matrix_knn)
 
 # Generate ROC curve for KNN
-roc_curve_knn <- roc(as.numeric(test_data$diagnosis)-1, as.numeric(knn_pred)-1)
-plot(roc_curve_knn, col = "#ca3517", main = "ROC Curve for the KNN model") # The "curve" looks like this because our model outputs discrete labels ("M" or"B") instead of continuous values
-auc(roc_curve_knn) # The area under the ROC curve is 0.941
+roc_curve_knn <- roc(as.numeric(test_data$diagnosis)-1, predictions_knn[,2])
+plot(roc_curve_knn, col = "#ca3517", main = "ROC Curve for the KNN model") # The "curve" looks like this because our model outputs discrete labels ("M" or "B") instead of continuous values
+auc(roc_curve_knn) # The area under the ROC curve is 0.9866
 ```
-We will next use a decision tree as model.
+We will next use a decision tree as model. We have already have done an important part of the work, since we have explored, cleaned, normalized and split the data.
 ```{r}
-# We have already have done an important part of the work, since we have explored, cleaned, normalized and split the data
 library(rpart)
 library(rpart.plot)
 
 ## Decision tree
-# Train Decision Tree model using rpart
-decision_tree_model <- rpart(diagnosis ~ ., data = train_data, method = "class")
+# The hyperparameter we will tune in this case is cp (complexity parameter)
 
-# Visualize the Decision Tree
-rpart.plot(decision_tree_model, main = "Decision Tree for the Diagnosis of Breast Cancer")
+############### No hyperparameter tuning
+# # Train Decision Tree model using rpart
+# dt_model <- rpart(diagnosis ~ ., data = train_data, method = "class")
+# 
+# # Visualize the Decision Tree
+# rpart.plot(dt_model, main = "Decision Tree for the Diagnosis of Breast Cancer")
+##############################################
 
-# Make predictions
+
+# Define tuning "grid" for Decision Tree
+tune_grid_tree <- expand.grid(cp = seq(0.001, 0.05, by = 0.002))
+
+# Set up cross-validation
+control_dtree <- trainControl(method = "cv", number = 10) # 10-fold cross-validation
+
+# Train Decision Tree model with hyperparameter tuning
+decision_tree_model <- train(diagnosis ~ ., data = train_data, method = "rpart",
+                   trControl= control_dtree, tuneGrid = tune_grid_tree)
+
+# Print the best value for cp
+print(decision_tree_model$bestTune) # The best value for cp is 0.013
+
+# Visualize the optimized Decision Tree
+rpart.plot(decision_tree_model$finalModel, main = "Optimized Decision Tree for the Diagnosis of Breast Cancer" )
+
+# Make predictions on test_data
 predictions_dtree <- predict(decision_tree_model, test_data[-1], type = "prob")
 
 # Convert probabilities into diagnosis labels
-predicted_classes_dtree <-ifelse(predictions_dtree[,2] > 0.5, "M", "B")
-predicted_classes_dtree <-factor(predicted_classes_dtree, levels = levels(test_data$diagnosis))
+predicted_classes_dtree <- ifelse(predictions_dtree[,2] > 0.5, "M", "B")
+predicted_classes_dtree <- factor(predicted_classes_dtree, levels = levels(test_data$diagnosis))
 
 # Evaluate the model
 confusion_matrix_dtree <- confusionMatrix(predicted_classes_dtree, test_data$diagnosis)
 print(confusion_matrix_dtree)
 
 # Generate ROC Curve for Decision Tree
-roc_curve_dt <- roc(as.numeric(test_data$diagnosis)-1, as.numeric(predicted_classes_dtree)-1)
+roc_curve_dt <- roc(as.numeric(test_data$diagnosis)-1, predictions_dtree[,2])
 plot(roc_curve_dt, col = "#063970", main = "ROC Curve for the Decision Tree model")
-auc(roc_curve_dt) # The area under the ROC curve is 0.9199
+auc(roc_curve_dt) # The area under the ROC curve is 0.9489
 
 
+```
+We will next use logistic regression as model. The same remark about exploratory data analysis and data pre-processing applies as for decision tree.
+```{r}
+## Logistic regression
+logistic_model <- glm(diagnosis ~ ., data = train_data, family = binomial)
+
+# Make predictions 
+predictions_log_reg <- predict(logistic_model, test_data[-1], type = "response")
+
+# Convert probabilities into diagnosis labels
+predicted_classes_log_reg <- ifelse(predictions_log_reg > 0.5, "M", "B")
+predicted_classes_log_reg <- factor(predicted_classes_log_reg, levels = levels(test_data$diagnosis))
+
+# Evaluate the model
+confusion_matrix_log_reg <- confusionMatrix(predicted_classes_log_reg, test_data$diagnosis)
+print(confusion_matrix_log_reg)
+
+# Generate ROC Curve for Decision Tree
+#roc_curve_log_reg <- roc(test_data$diagnosis, predicted_classes_log_reg, levels = levels(test_data$diagnosis), direction = "auto")
+
+roc_curve_log_reg <- roc(as.numeric(test_data$diagnosis)-1, as.numeric(predictions_log_reg)-1)
+
+plot(roc_curve_log_reg, col = "#036169", main = "ROC Curve for the Logistic Regression model")
+auc(roc_curve_log_reg) # The area under the ROC curve is 0.9903
 ```
 
 # Exercise 3  
