@@ -192,42 +192,40 @@ data_final <- cbind(diagnosis = data_selected$diagnosis, data_normalized)
 # Split the data into training and testing sets
 set.seed(100)
 trainIndex <- createDataPartition(data_final$diagnosis, p = 0.8, list = FALSE)
-train_data <- data_final[trainIndex, ]
-test_data <- data_final[-trainIndex, ]
+train_data <- data_final[trainIndex, ] # 80% of the data for training
+test_data <- data_final[-trainIndex, ] # 20% of the data for testing
 
 ```
 Now that we have explored and pre-processed the data, we proceed with the KNN algorithm.
 ```{r}
 ## KNN algorithm
 # The key hyperparameter for this model is K, the number of neighbors to consider.
-# Choose the best value of K (i.e. tune the hyperparameter K) by trying different values and selecting the one that gives the highest accuracy
-k_values<- seq(1, 20, by = 2)
-# Calculate accuracy
-accuracy <- sapply(k_values, function(k) {
-  knn_model <- knn(train = train_data[-1], test = test_data[-1],
-                   cl = train_data$diagnosis, k = k)
-  mean(knn_model == test_data$diagnosis)
-})
+# Choose the best value of K (i.e. tune the hyperparameter K). Use a 10-fold cross-validation instead of a single split
 
-best_k <- k_values[which.max(accuracy)] # The best value for K is 9
+# Define tuning "grid" for KNN (odd values from 1 to 20)
+tune_k_values<- expand.grid(k = seq(1, 20, by = 2))
 
-# Train final KNN model with the best K
-knn_pred <- knn(train = train_data[-1], test = test_data[-1],
-                cl = train_data$diagnosis, k = best_k)
+# Set up cross-validation
+control <- trainControl(method = "cv", number = 10) # 10-fold cross-validation
+
+# Train KNN model with hyperparameter tuning
+knn_model <- train(diagnosis ~ ., data = train_data, method = "knn",
+                   trControl= control, tuneGrid = tune_k_values)
+
+# Print the best value for K 
+print(knn_model$bestTune) # The best value for K is 15
+
+# Predict on test data
+knn_pred <- predict(knn_model, newdata = test_data)
 
 # Evaluate the model
-confusion_matrix <- confusionMatrix(knn_pred, test_data$diagnosis)
-print(confusion_matrix)
+confusion_matrix_knn <- confusionMatrix(knn_pred, test_data$diagnosis)
+print(confusion_matrix_knn)
 
 # Generate ROC curve for KNN
 roc_curve_knn <- roc(as.numeric(test_data$diagnosis)-1, as.numeric(knn_pred)-1)
 plot(roc_curve_knn, col = "#ca3517", main = "ROC Curve for the KNN model") # The "curve" looks like this because our model outputs discrete labels ("M" or"B") instead of continuous values
 auc(roc_curve_knn) # The area under the ROC curve is 0.941
-
-# TODO: The column "diagnosis" has already the correct classification
-# TODO: Should I delete column "diagnosis" and "X"? Why is "X" added?
-
-# For the K-nearest neighbor algorithm, we need to first standardize the data
 ```
 We will next use a decision tree as model.
 ```{r}
