@@ -453,7 +453,7 @@ if (file.exists(unknown_data_path)) {
 }
 
 # Show a preview of the combined data
-head(merge_data)
+# head(merge_data)
 
 ```
 ```{r}
