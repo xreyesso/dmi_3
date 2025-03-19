@@ -145,6 +145,7 @@ library(ggplot2)
 library(dplyr)
 library(caret)
 library(class)
+library(pROC)
 
 data_breast_cancer <- read.csv("data/breat_cancer_data.csv", sep= ",", header=TRUE)
 #data1 <- read.csv("/home/xrs/Downloads/breast+cancer+wisconsin+diagnostic/wdbc.data", sep= ",", header=TRUE)
@@ -221,13 +222,21 @@ knn_pred <- knn(train = train_data[-1], test = test_data[-1],
 confusion_matrix <- confusionMatrix(knn_pred, test_data$diagnosis)
 print(confusion_matrix)
 
+# Generate ROC curve for KNN
+roc_curve_knn <- roc(as.numeric(test_data$diagnosis)-1, as.numeric(knn_pred)-1)
+plot(roc_curve_knn, col = "darkblue", main = "ROC Curve for the KNN model") # The "curve" looks like this because our model outputs discrete labels ("M" or"B") instead of continuous values
+auc(roc_curve_knn) # The area under the ROC curve is 0.941
 
 # TODO: The column "diagnosis" has already the correct classification
 # TODO: Should I delete column "diagnosis" and "X"? Why is "X" added?
 
-
-
 # For the K-nearest neighbor algorithm, we need to first standardize the data
+```
+We now continue with a decision tree as model
+```{r}
+# We have already have done an important part of the work, since we have explored, cleaned, normalized and split the data
+## Decision tree
+
 
 ```
 
