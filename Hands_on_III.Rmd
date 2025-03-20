@@ -126,7 +126,6 @@ r_squared <- cor(predictions, test_data$lpsa)^2 # Computation of R-squared
 cat("RMSE:", rmse, "\n")
 cat("R-squared:", r_squared, "\n")
 
-
 ```
 R^2 = 0.5390 and RMSE = 0.7646, the first value indicates a moderate fit and the second a moderate error. Let us try regularization (Ridge and Lasso) to try to improve these metrics.
 ```{r}
@@ -189,7 +188,7 @@ cat("Lasso R²:", lasso_r2, "\n")
 
 ```
 
-Previously, our model explained 0.5390 of the variance, and with regularization we see an improvement in both cases. Also, the values for RMSE improved, which means our model's performance improved after applying regularization.
+Previously, our model explained 0.5390 of the variance, and with regularization we see an improvement in both cases (we can explain more variance after regularization). Also, the values for RMSE decreased in both cases, which means our model's performance improved after applying regularization.
 
 # Exercise 2
 
@@ -357,28 +356,61 @@ auc(roc_curve_dt) # The area under the ROC curve is 0.9489
 We will next use logistic regression as model. The same remark about exploratory data analysis and data pre-processing applies as for decision tree.
 ```{r}
 ## Logistic regression
-logistic_model <- glm(diagnosis ~ ., data = train_data, family = binomial)
+library(glmnet)
 
-# Make predictions 
-predictions_log_reg <- predict(logistic_model, test_data[-1], type = "response")
+# The main hyperparameter for logistic regression is regularization, we use Ridge regression
+# Convert labels ("M" and "B") to binary
+train_data$diagnosis <- factor(ifelse(train_data$diagnosis == "M", 1, 0), levels = c(0,1))
+test_data$diagnosis <- factor(ifelse(test_data$diagnosis == "M", 1, 0), levels = c(0,1))
+
+# Prepare data for glmnet
+x_train <-as.matrix(train_data[, -1])
+x_test <- as.matrix(test_data[, -1])
+
+# Define the response variable
+y_train <- train_data$diagnosis
+y_test <- test_data$diagnosis
+
+# Perform hyperparameter tuning with cross-validation
+set.seed(100)
+cv_logistic <- cv.glmnet(x_train, as.numeric(y_train) - 1, family = "binomial", alpha = 0)
+
+# Best lambda value
+best_lambda_logistic <- cv_logistic$lambda.min
+print(best_lambda_logistic)
+
+# Train final Logistic Regression model using the best lambda
+logistic_model_tuned <- glmnet(x_train, as.numeric(y_train) - 1, family = "binomial", alpha = 0, lambda = best_lambda_logistic)
+
+# Make predictions on test data
+predictions_log_reg_tuned <- predict(logistic_model_tuned, x_test, type = "response")
 
 # Convert probabilities into diagnosis labels
-predicted_classes_log_reg <- ifelse(predictions_log_reg > 0.5, "M", "B")
-predicted_classes_log_reg <- factor(predicted_classes_log_reg, levels = levels(test_data$diagnosis))
+predicted_classes_log_reg_tuned <- factor(ifelse(predictions_log_reg_tuned > 0.5, 1, 0), levels = c(0,1))
+
+# Important: convert both predictions and actual values to factors with the same levels
+#predicted_classes_log_reg_tuned <- factor(predicted_classes_log_reg_tuned, levels = c(0, 1))
+y_test <- factor(y_test, levels = c(0, 1))
+
+# Check if levels are the same
+print(levels(predicted_classes_log_reg_tuned))
+print(levels(y_test))
 
 # Evaluate the model
-confusion_matrix_log_reg <- confusionMatrix(predicted_classes_log_reg, test_data$diagnosis)
-print(confusion_matrix_log_reg)
+confusion_matrix_log_reg_tuned <- confusionMatrix(predicted_classes_log_reg_tuned, y_test, positive = "1")
+print(confusion_matrix_log_reg_tuned)
 
-# Generate ROC Curve for Decision Tree
-#roc_curve_log_reg <- roc(test_data$diagnosis, predicted_classes_log_reg, levels = levels(test_data$diagnosis), direction = "auto")
-
-roc_curve_log_reg <- roc(as.numeric(test_data$diagnosis)-1, as.numeric(predictions_log_reg)-1)
-
-plot(roc_curve_log_reg, col = "#036169", main = "ROC Curve for the Logistic Regression model")
-auc(roc_curve_log_reg) # The area under the ROC curve is 0.9903
+# Generate ROC Curve 
+roc_curve_log_reg_tuned <- roc(as.numeric(y_test), as.numeric(predictions_log_reg_tuned))
+plot(roc_curve_log_reg_tuned, col = "#036169", main = "ROC Curve for the Logistic Regression model tuned")
+auc(roc_curve_log_reg_tuned) # The area under the ROC curve is 
 
 ```
+
+To determine which model performs the best in this specific case, we look at the confusion matrices and AUC values for KNN, Decision Tree and Logistic Regression.
+Both KNN and Logistic regression achieve the highest AUC (0.9866), indicating a better classification performance than Decision Tree. Additionally, KNN has the highest Balanced Accuracy (0.9410), followed by Logistic Regression (0.9291) and Decision Tree (0.9199). Given that Decision Tree has the lowest AUC and Balanced Accuracy, we conclude it is the least robust model in this case. 
+
+Both KNN and Logistic Regression models perform well, but we believe Logistic Regression is the best choice because it outputs probabilities instead of just categorical predictions. These probability scores provide more meaningful clinical insights.
 
 # Exercise 3  
 
