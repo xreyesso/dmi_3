@@ -35,12 +35,14 @@ You can use as examples the [Linear Regression Lab](https://hastie.su.domains/IS
 ](https://hastie.su.domains/ISLR2/Labs/Rmarkdown_Notebooks/Ch6-varselect-lab.html) from the book [An Introduction to Statistical Learning](https://www.statlearning.com/).
 
 
+
+In this exercise, we need to do linear regression. We have multiple independent variables and one dependent variable, so we will perform Multiple Linear Regression
+
 ```{r}
 library(dplyr)
 library(leaps)
 library(caret)
-
-# In this exercise, we need to do linear regression. We have multiple independent variables and one dependent variable, so we will perform Multiple Linear Regression
+library(car)
 
 # Read the prostate data table 
 data_prostate <- read.table("data/prostate_data.txt", sep= "\t", header=TRUE)
@@ -58,7 +60,7 @@ str(data_prostate)
 
 # 2. We check for missing values
 missing_counts <- colSums(is.na(data_prostate))
-print(missing_counts)
+print(missing_counts) # There are no missing values
 
 # 3. Check if there are any duplicate rows in the table
 any(duplicated(data_prostate))     # returns FALSE
@@ -70,7 +72,7 @@ summary(data_prostate)
 data_prostate <- data_prostate %>% dplyr::select(-train)
 
 # Split the data intro training and testing sets
-set.seed(100)
+set.seed(100) # For reproducibility
 train_index <- createDataPartition(data_prostate$lpsa, p = 0.8, list = FALSE)
 train_data <- data_prostate[train_index, ]
 test_data <- data_prostate[-train_index, ]
@@ -81,22 +83,15 @@ complete_model <- lm(lpsa ~ ., data = train_data)
 step_model <- step(complete_model, direction = "both", trace = FALSE) # This is Stepwise Selection
 
 # Info about selected model
-summary(step_model) # Stepwise selection kept the most statistically significant predictors, which are: lcavol, lweight, age, lbph and svi. However, according to the p-values, lbph is not statistically significant so we may exclude it 
+summary(step_model) # Stepwise selection kept the most statistically significant predictors, which are: lcavol, lweight, age, lbph and svi. 
 
-# Refit using the predictors selected in previous step, without lbph
+# Refit using the predictors selected in previous step
 final_model <- lm(lpsa ~ lcavol + lweight + age + lbph + svi, data = train_data)
 
-# Evaluation of the model
-predictions <- predict(final_model, test_data)
-mse <- mean((predictions - test_data$lpsa)^2) # Mean squared error
-rmse <- sqrt(mse) # Root mean squared error
-r_squared <- cor(predictions, test_data$lpsa)^2 # TODO: what is this???
+## Check model assumptions before making predictions on the test data
+# Linearity, normality, multicollinearity
 
-# Evaluation metrics
-cat("RMSE:", rmse, "\n")
-cat("R-squared:", r_squared, "\n")
-
-# Plot the residuals to check the model assumptions
+# Plot the residuals to check the linearity model assumption
 plot(final_model$fitted.values, residuals(final_model), 
      main = "Residual plot",
      xlab = "Fitted values", 
@@ -104,21 +99,97 @@ plot(final_model$fitted.values, residuals(final_model),
      pch = 20, col = "darkblue")
 abline(h = 0, col = "darkorange")
 
-# TODO: Explain why the residuals look good
+# Check normality of residuals
+qqnorm(residuals(final_model))
+qqline(residuals(final_model), col = "#732370")
 
-# TODO: Next steps: check for multicollinearity (why is this agood idea?)and k-cross fold validation
-
-# Perform cross-validation to check the stability of the model
-
-
+# Check collinearity
+vif(final_model) # A value of VIF (Variance Inflation Factor) greater than 5 indicates a collinearity issue
 ```
 
+The residual plot looks good, since the points should be randomly scattered around 0, without apparent patterns. Therefore, the linearity assumption is met. Additionally, residuals show a consistent spread (i.e. equal variance).
+Furthermore, the residuals are close to the Q-Q line, which indicates that they follow a normal distribution. Also, the VIF values look good, they are just above 1 (value of 1 means they are not correlated, and a value greater than 5 means they are highly correlated).
+Therefore, our model assumptions are met and we can proceed to make predictions on the test data.
 ```{r}
+# Predict on test data
+predictions <- predict(final_model, test_data)
+
+```
+
+The next step is to evaluate the model. For regression models, we use numeric evaluation metrics, like RMSE, R² or residual analysis.
+```{r}
+# Evaluate the model
+mse <- mean((predictions - test_data$lpsa)^2) # Mean squared error
+rmse <- sqrt(mse) # Root mean squared error
+r_squared <- cor(predictions, test_data$lpsa)^2 # Computation of R-squared
+
+cat("RMSE:", rmse, "\n")
+cat("R-squared:", r_squared, "\n")
+
+
+```
+R^2 = 0.5390 and RMSE = 0.7646, the first value indicates a moderate fit and the second a moderate error. Let us try regularization (Ridge and Lasso) to try to improve these metrics.
+```{r}
+library(glmnet)
+library(caret)
+
+# Prepare data for glmnet, it requires a matrix of predictors and a response vector
+# Define predictor variables (exclude lpsa since this is our response variable)
+x_train <- model.matrix(lpsa ~ ., data = train_data)[, -1]
+x_test <- model.matrix(lpsa ~ ., data = test_data)[, -1]
+
+# Define the response variable
+y_train <- train_data$lpsa
+y_test <- test_data$lpsa
+
+# Define a sequence of lambda values
+lambda_seq <- 10^seq(3, -3, by = -0.1)
+
+## Ridge model
+# Use Ridge model, together with cross-validation to find the best lambda
+ridge_cv <- cv.glmnet(x_train, y_train, alpha = 0, lambda = lambda_seq)
+
+# Best lambda value
+best_lambda_ridge <- ridge_cv$lambda.min
+print(best_lambda_ridge)
+
+# Train final Ridge model using the best lambda
+ridge_model <- glmnet(x_train, y_train, alpha = 0, lambda = best_lambda_ridge)
+
+# Make predictions on test data
+predictions_ridge <- predict(ridge_model, s = best_lambda_ridge, newx = x_test)
+
+## Use Lasso model
+# Use Lasso model, together with cross-validation to find the best lambda
+lasso_cv <- cv.glmnet(x_train, y_train, alpha = 1, lambda = lambda_seq)
+
+# Best lambda value
+best_lambda <- lasso_cv$lambda.min
+print(best_lambda)
+
+# Train final Lasso model using the best lambda
+lasso_model <- glmnet(x_train, y_train, alpha = 1, lambda = best_lambda)
+
+# Make predictions on test data
+predictions_lasso <- predict(lasso_model, s = best_lambda, newx = x_test)
+
+# Compute RMSE for Ridge and Lasso
+ridge_rmse <- sqrt(mean((predictions_ridge - y_test)^2))
+lasso_rmse <- sqrt(mean((predictions_lasso - y_test)^2))
+
+# Compute R^2 for Ridge and Lasso
+ridge_r2 <- cor(predictions_ridge, y_test)^2
+lasso_r2 <- cor(predictions_lasso, y_test)^2
+
+cat("Ridge RMSE:", ridge_rmse, "\n")
+cat("Lasso RMSE:", lasso_rmse, "\n")
+cat("Ridge R²:", ridge_r2, "\n")
+cat("Lasso R²:", lasso_r2, "\n")
 
 
 ```
 
-
+Previously, our model explained 0.5390 of the variance, and with regularization we see an improvement in both cases. Also, the values for RMSE improved, which means our model's performance improved after applying regularization.
 
 # Exercise 2
 
@@ -322,306 +393,306 @@ Important notice: if you do not have a lot of hard drive space in your laptop, y
 
 
 ```{r}
-#setwd("C:/Users/arian/Documents/GitHub/assignment-3-Arimurilloh-main")
-#Load libraries
-library(glmnet)
-library(pROC)
-library(class)
-library(caret)
-library(rpart)
-library(rpart.plot)
-library(tidymodels)
-library(kknn)
-library(ranger)
-library(randomForest)
-```
-
-```{r}
-library(dplyr)  # To use full_join and mutate
-
-# Define the base folder for LAML
-base_path_LAML <- "data/LAML100"
-
-# Obtain the list of .tsv files inside subfolderss
-LAML_files <- list.files(base_path_LAML, pattern = "\\.tsv$", recursive = TRUE, full.names = TRUE)
-
-# Create an empty dataframe
-LAML <- data.frame()
-
-# Iterate over the files and process them
-for (i in seq_along(LAML_files)) {
-  file <- LAML_files[i]  # # Iterate over the files and process them
-
-  # Merge with the accumulating dataframe
-  if (file.exists(file)) {
-    df <- read.table(file, header = TRUE, skip = 1, sep = "\t")
-    
-    # Ensure the dataframe has enough rows before removing them
-    if (nrow(df) > 4) {
-      df <- df[-c(1:4), ]  # Remove the first 4 rows
-    }
-
-    # Select only the columns of interest if they exist
-    if ("gene_id" %in% colnames(df) && "tpm_unstranded" %in% colnames(df)) {
-      df_subset <- df[, c("gene_id", "tpm_unstranded")]
-
-      # Merge with the accumulating dataframe
-      if (i == 1) {
-        LAML <- df_subset
-      } else {
-        LAML <- full_join(LAML, df_subset, by = "gene_id")
-      }
-    } else {
-      warning(paste("El archivo", file, "no tiene las columnas esperadas."))
-    }
-  } else {
-    warning(paste("Archivo no encontrado:", file))
-  }
-}
-
-# Transpose the dataframe
-LAML <- data.frame(t(LAML))
-
-# Set column and row names
-colnames(LAML) <- LAML[1,]  # Set column names as gene_ids
-LAML <- LAML[-1,]  # Remove the first row
-rownames(LAML) <- paste0("LAML_", 1:nrow(LAML))  # Dynamically rename rows
-
-# Define the base folder for KIRC
-base_path_KIRC <- "data/KIRC100"
-
-# Get the list of .tsv files inside subfolders
-KIRC_files <- list.files(base_path_KIRC, pattern = "\\.tsv$", recursive = TRUE, full.names = TRUE)
-
-# Get the list of .tsv files inside subfolders
-KIRC <- data.frame()
-
-# Iterate over the files and process them
-for (i in seq_along(KIRC_files)) {
-  file <- KIRC_files[i]  # Each file already has the full path
-
-  # Check if the file exists before reading it
-  if (file.exists(file)) {
-    df <- read.table(file, header = TRUE, skip = 1, sep = "\t")
-
-    # Ensure the dataframe has enough rows before removing them
-    if (nrow(df) > 4) {
-      df <- df[-c(1:4), ]  # Remove the first 4 rows
-    }
-
-    # Select only the columns of interest if they exist
-    if ("gene_id" %in% colnames(df) && "tpm_unstranded" %in% colnames(df)) {
-      df_subset <- df[, c("gene_id", "tpm_unstranded")]
-
-      # Merge with the accumulating dataframe
-      if (i == 1) {
-        KIRC <- df_subset
-      } else {
-        KIRC <- full_join(KIRC, df_subset, by = "gene_id")
-      }
-    } else {
-      warning(paste("El archivo", file, "no tiene las columnas esperadas."))
-    }
-  } else {
-    warning(paste("Archivo no encontrado:", file))
-  }
-}
-
-# Transpose the dataframe
-KIRC <- data.frame(t(KIRC))
-
-# Set column and row names
-colnames(KIRC) <- KIRC[1,]  # Set column names as gene_ids
-KIRC <- KIRC[-1,]  # Remove the first row
-rownames(KIRC) <- paste0("KIRC_", 1:nrow(KIRC))  # Dynamically rename rows
-
-# Merge the datasets
-merge_data <- rbind(LAML, KIRC)
-merge_data <- merge_data %>% mutate(type = ifelse(grepl("^LAML", rownames(merge_data)), "LAML", "KIRC"))
-
-# Load the unknown data
-unknown_data_path <- "data/unknwown_samples.tsv"
-
-if (file.exists(unknown_data_path)) {
-  unknown_data <- read.table(unknown_data_path, header = TRUE, sep = "\t")
-  unknown_data <- t(unknown_data)
-  colnames(unknown_data) <- unknown_data[1,]
-  unknown_data <- unknown_data[-c(1,2),]
-  unknown_data <- as.data.frame(unknown_data)
-} else {
-  warning(paste("El archivo de datos desconocidos no fue encontrado:", unknown_data_path))
-}
-
-# Show a preview of the combined data
-# head(merge_data)
-
-```
-```{r}
-library(dplyr)      # data manipulation
-library(tidymodels) # modeling and tuning
-library(randomForest)
-library(ranger)
-library(pROC)       # ROC curve
-library(ggplot2)    # data visualization
-
-# RANDOM FOREST ------------------------------------------------------------------
-# FEATURE SELECTION
-# Convert data to numeric format
-LAML <- lapply(LAML, as.numeric)
-KIRC <- lapply(KIRC, as.numeric)
-LAML <- as.data.frame(LAML)
-KIRC <- as.data.frame(KIRC)
-
-# Calculate the absolute difference in gene expression between cancer types
-expression_difference <- abs(apply(LAML, 2, mean) - apply(KIRC, 2, mean))
-
-# Sort genes by expression difference
-sorted_genes <- sort(expression_difference, decreasing = TRUE)
-
-# Display descriptive statistics
-range(expression_difference)
-mean(expression_difference)
-median(expression_difference)
-
-# Select the top 50 genes with the highest expression difference
-genes_dif <- head(sorted_genes, 50)
-genes_dif <- as.data.frame(genes_dif)
-top50genes <- rownames(genes_dif)
-
-# Filter the dataset, keeping only the selected genes and the type variable
-filtered <- merge_data[, c(top50genes, "type"), drop = FALSE]
-
-# Training and test split
-set.seed(2024)  # For reproducibility
-training_indices <- sample(1:nrow(filtered), 0.7 * nrow(filtered))  # 70% of data for trainingo
-test_indices <- setdiff(1:nrow(filtered), training_indices) # 30% for testing
-
-train_data <- filtered[training_indices, ]
-test_data <- filtered[test_indices, ]
-
-# Convert genes to numeric and type variable to factor
-train_data[, -ncol(train_data)] <- lapply(train_data[, -ncol(train_data)], as.numeric)
-train_data[[ncol(train_data)]] <- as.factor(train_data[[ncol(train_data)]])
-
-test_data[, -ncol(test_data)] <- lapply(test_data[, -ncol(test_data)], as.numeric)
-test_data[[ncol(test_data)]] <- as.factor(test_data[[ncol(test_data)]])
-
-# Define recipe
-cancer_recipe <- recipe(type ~ ., data = train_data)
-
-# Define Random Forest model
-cancer_model <- rand_forest() %>% 
-  set_args(mtry = tune()) %>% 
-  set_engine("ranger", importance = "impurity") %>% 
-  set_mode("classification")
-
-# Define the tuning grid
-cancer_grid <- expand.grid(mtry = c(5:15))
-
-# Create workflow and cross-validation scheme
-rf_workflow <- workflow() %>% 
-  add_recipe(cancer_recipe) %>% 
-  add_model(cancer_model)
-
-training_cv <- vfold_cv(train_data) # 5 folds by default
-
-# Perform hyperparameter tuning
-set.seed(2024)
-cancer_tune <- tune_grid(
-  rf_workflow,
-  resamples = training_cv,
-  grid = cancer_grid
-)
-
-# Select the best model based on accuracy
-best_cancer <- select_best(cancer_tune, metric = "accuracy")
-final_cancer <- finalize_workflow(rf_workflow, best_cancer)
-
-# Train the final model with the training data
-cancer_fit <- final_cancer %>% 
-  fit(train_data)
-
-# Make predictions on the test data
-predictions_cancer <- predict(cancer_fit, test_data, type = "class")
-
-# Calculate model accuracy
-cancer_accuracy <- mean(predictions_cancer$.pred_class == test_data$type)
-print(paste("Accuracy Random Forest:", cancer_accuracy))
-
-# ROC CURVE ----------------------------------------------------------------------
-# Convert predictions to numeric for ROC
-cancer_roc <- roc(test_data$type, as.numeric(predictions_cancer$.pred_class))
-
-# Calculate and display AUC
-auc_value <- auc(cancer_roc)
-cat("Area under the curve (AUC):", auc_value, "\n")
-
-# Plot the ROC curve with customized colors
-plot(cancer_roc, 
-     main = "Curva ROC - Random Forest", 
-     col = "#E63946",  # Dark red
-     lwd = 3,          # Line width
-     print.auc = TRUE,
-     auc.polygon = TRUE, 
-     auc.polygon.col = rgb(1, 0, 0, alpha = 0.2))  # Transparent red shading
-grid(col = "gray70")  # Add a light grid
-
-```
-The test set prediction accuracy reached 100%, indicating a high likelihood of overfitting. Despite efforts to mitigate this by reducing tree depth, increasing the number of selected genes, and expanding the number of trees, overfitting persisted. Utilizing the full dataset along with all available genes could potentially help alleviate this issue.
-
-```{r}
-library(dplyr)      # Data manipulation
-library(tidymodels) # Model handling
-library(ggplot2)    # Visualization
-
-# PREDICTIONS OF THE UNKNOWN SAMPLES ---------------------------------------------------
-
-# Ensure the unknown dataset contains the same top 50 genes
-filtered_unknown <- unknown_data[, top50genes, drop = FALSE]
-
-# Convert data to numeric
-filtered_unknown <- mutate_all(filtered_unknown, as.numeric)
-
-# Get class predictions and probabilities
-predictions_uk <- predict(cancer_fit, filtered_unknown, type = "prob")
-
-# Convert predictions to a data frame for easier handling
-predictions_uk <- as.data.frame(predictions_uk)
-
-# Get the class with the highest probability for each individual
-predicted_class <- colnames(predictions_uk)[max.col(predictions_uk, ties.method = "first")]
-
-# Get the probability of the predicted class
-max_probability <- apply(predictions_uk, 1, max)
-
-# Create the resulting table
-result_table <- data.frame(
-  Individual = rownames(filtered_unknown),
-  Cancer_Class_Prediction = gsub('.pred_', '', predicted_class),  # Remove prefix
-  Prediction_Probability = max_probability
-)
-
-# Print the resulting table
-print(result_table)
-
-# Visualization: Prediction Probabilities
-ggplot(result_table, aes(x = Cancer_Class_Prediction, y = Prediction_Probability, fill = Cancer_Class_Prediction)) +
-  geom_boxplot(alpha = 0.6, outlier.shape = NA) +  
-  geom_jitter(width = 0.2, alpha = 0.8, size = 2) +  
-  labs(title = "Prediction Probabilities for Unknown Samples",
-       x = "Predicted Cancer Type",
-       y = "Prediction Probability") +
-  theme_minimal() +
-  scale_fill_manual(values = c("#1f78b4", "#e31a1c"))  # Blue & Red for readability
-
-# Set probability threshold (adjust as needed)
-threshold <- 0.9  # Example: Only consider predictions with >90% confidence
-
-# Count number of observations above the threshold
-high_confidence_count <- sum(result_table$Prediction_Probability > threshold)
-
-# Print the result
-cat("We have", high_confidence_count, "observations with a probability higher than", threshold, ".\n")
+# #setwd("C:/Users/arian/Documents/GitHub/assignment-3-Arimurilloh-main")
+# #Load libraries
+# library(glmnet)
+# library(pROC)
+# library(class)
+# library(caret)
+# library(rpart)
+# library(rpart.plot)
+# library(tidymodels)
+# library(kknn)
+# library(ranger)
+# library(randomForest)
+# ```
+# 
+# ```{r}
+# library(dplyr)  # To use full_join and mutate
+# 
+# # Define the base folder for LAML
+# base_path_LAML <- "data/LAML100"
+# 
+# # Obtain the list of .tsv files inside subfolderss
+# LAML_files <- list.files(base_path_LAML, pattern = "\\.tsv$", recursive = TRUE, full.names = TRUE)
+# 
+# # Create an empty dataframe
+# LAML <- data.frame()
+# 
+# # Iterate over the files and process them
+# for (i in seq_along(LAML_files)) {
+#   file <- LAML_files[i]  # # Iterate over the files and process them
+# 
+#   # Merge with the accumulating dataframe
+#   if (file.exists(file)) {
+#     df <- read.table(file, header = TRUE, skip = 1, sep = "\t")
+#     
+#     # Ensure the dataframe has enough rows before removing them
+#     if (nrow(df) > 4) {
+#       df <- df[-c(1:4), ]  # Remove the first 4 rows
+#     }
+# 
+#     # Select only the columns of interest if they exist
+#     if ("gene_id" %in% colnames(df) && "tpm_unstranded" %in% colnames(df)) {
+#       df_subset <- df[, c("gene_id", "tpm_unstranded")]
+# 
+#       # Merge with the accumulating dataframe
+#       if (i == 1) {
+#         LAML <- df_subset
+#       } else {
+#         LAML <- full_join(LAML, df_subset, by = "gene_id")
+#       }
+#     } else {
+#       warning(paste("El archivo", file, "no tiene las columnas esperadas."))
+#     }
+#   } else {
+#     warning(paste("Archivo no encontrado:", file))
+#   }
+# }
+# 
+# # Transpose the dataframe
+# LAML <- data.frame(t(LAML))
+# 
+# # Set column and row names
+# colnames(LAML) <- LAML[1,]  # Set column names as gene_ids
+# LAML <- LAML[-1,]  # Remove the first row
+# rownames(LAML) <- paste0("LAML_", 1:nrow(LAML))  # Dynamically rename rows
+# 
+# # Define the base folder for KIRC
+# base_path_KIRC <- "data/KIRC100"
+# 
+# # Get the list of .tsv files inside subfolders
+# KIRC_files <- list.files(base_path_KIRC, pattern = "\\.tsv$", recursive = TRUE, full.names = TRUE)
+# 
+# # Get the list of .tsv files inside subfolders
+# KIRC <- data.frame()
+# 
+# # Iterate over the files and process them
+# for (i in seq_along(KIRC_files)) {
+#   file <- KIRC_files[i]  # Each file already has the full path
+# 
+#   # Check if the file exists before reading it
+#   if (file.exists(file)) {
+#     df <- read.table(file, header = TRUE, skip = 1, sep = "\t")
+# 
+#     # Ensure the dataframe has enough rows before removing them
+#     if (nrow(df) > 4) {
+#       df <- df[-c(1:4), ]  # Remove the first 4 rows
+#     }
+# 
+#     # Select only the columns of interest if they exist
+#     if ("gene_id" %in% colnames(df) && "tpm_unstranded" %in% colnames(df)) {
+#       df_subset <- df[, c("gene_id", "tpm_unstranded")]
+# 
+#       # Merge with the accumulating dataframe
+#       if (i == 1) {
+#         KIRC <- df_subset
+#       } else {
+#         KIRC <- full_join(KIRC, df_subset, by = "gene_id")
+#       }
+#     } else {
+#       warning(paste("El archivo", file, "no tiene las columnas esperadas."))
+#     }
+#   } else {
+#     warning(paste("Archivo no encontrado:", file))
+#   }
+# }
+# 
+# # Transpose the dataframe
+# KIRC <- data.frame(t(KIRC))
+# 
+# # Set column and row names
+# colnames(KIRC) <- KIRC[1,]  # Set column names as gene_ids
+# KIRC <- KIRC[-1,]  # Remove the first row
+# rownames(KIRC) <- paste0("KIRC_", 1:nrow(KIRC))  # Dynamically rename rows
+# 
+# # Merge the datasets
+# merge_data <- rbind(LAML, KIRC)
+# merge_data <- merge_data %>% mutate(type = ifelse(grepl("^LAML", rownames(merge_data)), "LAML", "KIRC"))
+# 
+# # Load the unknown data
+# unknown_data_path <- "data/unknwown_samples.tsv"
+# 
+# if (file.exists(unknown_data_path)) {
+#   unknown_data <- read.table(unknown_data_path, header = TRUE, sep = "\t")
+#   unknown_data <- t(unknown_data)
+#   colnames(unknown_data) <- unknown_data[1,]
+#   unknown_data <- unknown_data[-c(1,2),]
+#   unknown_data <- as.data.frame(unknown_data)
+# } else {
+#   warning(paste("El archivo de datos desconocidos no fue encontrado:", unknown_data_path))
+# }
+# 
+# # Show a preview of the combined data
+# # head(merge_data)
+# 
+# ```
+# ```{r}
+# library(dplyr)      # data manipulation
+# library(tidymodels) # modeling and tuning
+# library(randomForest)
+# library(ranger)
+# library(pROC)       # ROC curve
+# library(ggplot2)    # data visualization
+# 
+# # RANDOM FOREST ------------------------------------------------------------------
+# # FEATURE SELECTION
+# # Convert data to numeric format
+# LAML <- lapply(LAML, as.numeric)
+# KIRC <- lapply(KIRC, as.numeric)
+# LAML <- as.data.frame(LAML)
+# KIRC <- as.data.frame(KIRC)
+# 
+# # Calculate the absolute difference in gene expression between cancer types
+# expression_difference <- abs(apply(LAML, 2, mean) - apply(KIRC, 2, mean))
+# 
+# # Sort genes by expression difference
+# sorted_genes <- sort(expression_difference, decreasing = TRUE)
+# 
+# # Display descriptive statistics
+# range(expression_difference)
+# mean(expression_difference)
+# median(expression_difference)
+# 
+# # Select the top 50 genes with the highest expression difference
+# genes_dif <- head(sorted_genes, 50)
+# genes_dif <- as.data.frame(genes_dif)
+# top50genes <- rownames(genes_dif)
+# 
+# # Filter the dataset, keeping only the selected genes and the type variable
+# filtered <- merge_data[, c(top50genes, "type"), drop = FALSE]
+# 
+# # Training and test split
+# set.seed(2024)  # For reproducibility
+# training_indices <- sample(1:nrow(filtered), 0.7 * nrow(filtered))  # 70% of data for trainingo
+# test_indices <- setdiff(1:nrow(filtered), training_indices) # 30% for testing
+# 
+# train_data <- filtered[training_indices, ]
+# test_data <- filtered[test_indices, ]
+# 
+# # Convert genes to numeric and type variable to factor
+# train_data[, -ncol(train_data)] <- lapply(train_data[, -ncol(train_data)], as.numeric)
+# train_data[[ncol(train_data)]] <- as.factor(train_data[[ncol(train_data)]])
+# 
+# test_data[, -ncol(test_data)] <- lapply(test_data[, -ncol(test_data)], as.numeric)
+# test_data[[ncol(test_data)]] <- as.factor(test_data[[ncol(test_data)]])
+# 
+# # Define recipe
+# cancer_recipe <- recipe(type ~ ., data = train_data)
+# 
+# # Define Random Forest model
+# cancer_model <- rand_forest() %>% 
+#   set_args(mtry = tune()) %>% 
+#   set_engine("ranger", importance = "impurity") %>% 
+#   set_mode("classification")
+# 
+# # Define the tuning grid
+# cancer_grid <- expand.grid(mtry = c(5:15))
+# 
+# # Create workflow and cross-validation scheme
+# rf_workflow <- workflow() %>% 
+#   add_recipe(cancer_recipe) %>% 
+#   add_model(cancer_model)
+# 
+# training_cv <- vfold_cv(train_data) # 5 folds by default
+# 
+# # Perform hyperparameter tuning
+# set.seed(2024)
+# cancer_tune <- tune_grid(
+#   rf_workflow,
+#   resamples = training_cv,
+#   grid = cancer_grid
+# )
+# 
+# # Select the best model based on accuracy
+# best_cancer <- select_best(cancer_tune, metric = "accuracy")
+# final_cancer <- finalize_workflow(rf_workflow, best_cancer)
+# 
+# # Train the final model with the training data
+# cancer_fit <- final_cancer %>% 
+#   fit(train_data)
+# 
+# # Make predictions on the test data
+# predictions_cancer <- predict(cancer_fit, test_data, type = "class")
+# 
+# # Calculate model accuracy
+# cancer_accuracy <- mean(predictions_cancer$.pred_class == test_data$type)
+# print(paste("Accuracy Random Forest:", cancer_accuracy))
+# 
+# # ROC CURVE ----------------------------------------------------------------------
+# # Convert predictions to numeric for ROC
+# cancer_roc <- roc(test_data$type, as.numeric(predictions_cancer$.pred_class))
+# 
+# # Calculate and display AUC
+# auc_value <- auc(cancer_roc)
+# cat("Area under the curve (AUC):", auc_value, "\n")
+# 
+# # Plot the ROC curve with customized colors
+# plot(cancer_roc, 
+#      main = "Curva ROC - Random Forest", 
+#      col = "#E63946",  # Dark red
+#      lwd = 3,          # Line width
+#      print.auc = TRUE,
+#      auc.polygon = TRUE, 
+#      auc.polygon.col = rgb(1, 0, 0, alpha = 0.2))  # Transparent red shading
+# grid(col = "gray70")  # Add a light grid
+# 
+# ```
+# The test set prediction accuracy reached 100%, indicating a high likelihood of overfitting. Despite efforts to mitigate this by reducing tree depth, increasing the number of selected genes, and expanding the number of trees, overfitting persisted. Utilizing the full dataset along with all available genes could potentially help alleviate this issue.
+# 
+# ```{r}
+# library(dplyr)      # Data manipulation
+# library(tidymodels) # Model handling
+# library(ggplot2)    # Visualization
+# 
+# # PREDICTIONS OF THE UNKNOWN SAMPLES ---------------------------------------------------
+# 
+# # Ensure the unknown dataset contains the same top 50 genes
+# filtered_unknown <- unknown_data[, top50genes, drop = FALSE]
+# 
+# # Convert data to numeric
+# filtered_unknown <- mutate_all(filtered_unknown, as.numeric)
+# 
+# # Get class predictions and probabilities
+# predictions_uk <- predict(cancer_fit, filtered_unknown, type = "prob")
+# 
+# # Convert predictions to a data frame for easier handling
+# predictions_uk <- as.data.frame(predictions_uk)
+# 
+# # Get the class with the highest probability for each individual
+# predicted_class <- colnames(predictions_uk)[max.col(predictions_uk, ties.method = "first")]
+# 
+# # Get the probability of the predicted class
+# max_probability <- apply(predictions_uk, 1, max)
+# 
+# # Create the resulting table
+# result_table <- data.frame(
+#   Individual = rownames(filtered_unknown),
+#   Cancer_Class_Prediction = gsub('.pred_', '', predicted_class),  # Remove prefix
+#   Prediction_Probability = max_probability
+# )
+# 
+# # Print the resulting table
+# print(result_table)
+# 
+# # Visualization: Prediction Probabilities
+# ggplot(result_table, aes(x = Cancer_Class_Prediction, y = Prediction_Probability, fill = Cancer_Class_Prediction)) +
+#   geom_boxplot(alpha = 0.6, outlier.shape = NA) +  
+#   geom_jitter(width = 0.2, alpha = 0.8, size = 2) +  
+#   labs(title = "Prediction Probabilities for Unknown Samples",
+#        x = "Predicted Cancer Type",
+#        y = "Prediction Probability") +
+#   theme_minimal() +
+#   scale_fill_manual(values = c("#1f78b4", "#e31a1c"))  # Blue & Red for readability
+# 
+# # Set probability threshold (adjust as needed)
+# threshold <- 0.9  # Example: Only consider predictions with >90% confidence
+# 
+# # Count number of observations above the threshold
+# high_confidence_count <- sum(result_table$Prediction_Probability > threshold)
+# 
+# # Print the result
+# cat("We have", high_confidence_count, "observations with a probability higher than", threshold, ".\n")
 
 ```
 We have 6 observations with a probability higher than 0.9. 
