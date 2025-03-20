@@ -209,16 +209,12 @@ You can use as a guide the analysis of this dataset included in the [chapter 5](
 Additionally, for further information and ideas, you can check [this post](https://www.rebeccabarter.com/blog/2020-03-25_machine_learning/)
 
 ```{r}
-# TODO: do not forget hyperparameter tuning
-# TODO: the teacher suggested logistic regression, random forest, decision tree for this exercise
-# TOOD: Answer which model performs best
 library(dplyr)
 library(caret)
 library(class)
 library(pROC)
 
 data_breast_cancer <- read.csv("data/breat_cancer_data.csv", sep= ",", header=TRUE)
-#data1 <- read.csv("/home/xrs/Downloads/breast+cancer+wisconsin+diagnostic/wdbc.data", sep= ",", header=TRUE)
 
 ## Exploratory Data Analysis
 # 1. Check the data types
@@ -311,15 +307,6 @@ library(rpart.plot)
 ## Decision tree
 # The hyperparameter we will tune in this case is cp (complexity parameter)
 
-############### No hyperparameter tuning
-# # Train Decision Tree model using rpart
-# dt_model <- rpart(diagnosis ~ ., data = train_data, method = "class")
-# 
-# # Visualize the Decision Tree
-# rpart.plot(dt_model, main = "Decision Tree for the Diagnosis of Breast Cancer")
-##############################################
-
-
 # Define tuning "grid" for Decision Tree
 tune_grid_tree <- expand.grid(cp = seq(0.001, 0.05, by = 0.002))
 
@@ -389,7 +376,6 @@ predictions_log_reg_tuned <- predict(logistic_model_tuned, x_test, type = "respo
 predicted_classes_log_reg_tuned <- factor(ifelse(predictions_log_reg_tuned > 0.5, 1, 0), levels = c(0,1))
 
 # Important: convert both predictions and actual values to factors with the same levels
-#predicted_classes_log_reg_tuned <- factor(predicted_classes_log_reg_tuned, levels = c(0, 1))
 y_test <- factor(y_test, levels = c(0, 1))
 
 # Check if levels are the same
@@ -423,311 +409,233 @@ Each team will work with two specific cancer types, that will be assigned in cla
 
 Important notice: if you do not have a lot of hard drive space in your laptop, you can modify the manifest file to download only 50 samples per cancer types. 
 
+```{r}
+
+#Load libraries
+library(here)       # To manage relative paths
+library(dplyr)      # Data manipulation
+library(tidymodels) # Modeling and tuning
+library(glmnet)
+library(pROC)
+library(class)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(kknn)
+library(ranger)
+library(randomForest)
+library(ggplot2)
+```
+
 
 ```{r}
-# #setwd("C:/Users/arian/Documents/GitHub/assignment-3-Arimurilloh-main")
-# #Load libraries
-# library(glmnet)
-# library(pROC)
-# library(class)
-# library(caret)
-# library(rpart)
-# library(rpart.plot)
-# library(tidymodels)
-# library(kknn)
-# library(ranger)
-# library(randomForest)
-# ```
-# 
-# ```{r}
-# library(dplyr)  # To use full_join and mutate
-# 
-# # Define the base folder for LAML
-# base_path_LAML <- "data/LAML100"
-# 
-# # Obtain the list of .tsv files inside subfolderss
-# LAML_files <- list.files(base_path_LAML, pattern = "\\.tsv$", recursive = TRUE, full.names = TRUE)
-# 
-# # Create an empty dataframe
-# LAML <- data.frame()
-# 
-# # Iterate over the files and process them
-# for (i in seq_along(LAML_files)) {
-#   file <- LAML_files[i]  # # Iterate over the files and process them
-# 
-#   # Merge with the accumulating dataframe
-#   if (file.exists(file)) {
-#     df <- read.table(file, header = TRUE, skip = 1, sep = "\t")
-#     
-#     # Ensure the dataframe has enough rows before removing them
-#     if (nrow(df) > 4) {
-#       df <- df[-c(1:4), ]  # Remove the first 4 rows
-#     }
-# 
-#     # Select only the columns of interest if they exist
-#     if ("gene_id" %in% colnames(df) && "tpm_unstranded" %in% colnames(df)) {
-#       df_subset <- df[, c("gene_id", "tpm_unstranded")]
-# 
-#       # Merge with the accumulating dataframe
-#       if (i == 1) {
-#         LAML <- df_subset
-#       } else {
-#         LAML <- full_join(LAML, df_subset, by = "gene_id")
-#       }
-#     } else {
-#       warning(paste("El archivo", file, "no tiene las columnas esperadas."))
-#     }
-#   } else {
-#     warning(paste("Archivo no encontrado:", file))
-#   }
-# }
-# 
-# # Transpose the dataframe
-# LAML <- data.frame(t(LAML))
-# 
-# # Set column and row names
-# colnames(LAML) <- LAML[1,]  # Set column names as gene_ids
-# LAML <- LAML[-1,]  # Remove the first row
-# rownames(LAML) <- paste0("LAML_", 1:nrow(LAML))  # Dynamically rename rows
-# 
-# # Define the base folder for KIRC
-# base_path_KIRC <- "data/KIRC100"
-# 
-# # Get the list of .tsv files inside subfolders
-# KIRC_files <- list.files(base_path_KIRC, pattern = "\\.tsv$", recursive = TRUE, full.names = TRUE)
-# 
-# # Get the list of .tsv files inside subfolders
-# KIRC <- data.frame()
-# 
-# # Iterate over the files and process them
-# for (i in seq_along(KIRC_files)) {
-#   file <- KIRC_files[i]  # Each file already has the full path
-# 
-#   # Check if the file exists before reading it
-#   if (file.exists(file)) {
-#     df <- read.table(file, header = TRUE, skip = 1, sep = "\t")
-# 
-#     # Ensure the dataframe has enough rows before removing them
-#     if (nrow(df) > 4) {
-#       df <- df[-c(1:4), ]  # Remove the first 4 rows
-#     }
-# 
-#     # Select only the columns of interest if they exist
-#     if ("gene_id" %in% colnames(df) && "tpm_unstranded" %in% colnames(df)) {
-#       df_subset <- df[, c("gene_id", "tpm_unstranded")]
-# 
-#       # Merge with the accumulating dataframe
-#       if (i == 1) {
-#         KIRC <- df_subset
-#       } else {
-#         KIRC <- full_join(KIRC, df_subset, by = "gene_id")
-#       }
-#     } else {
-#       warning(paste("El archivo", file, "no tiene las columnas esperadas."))
-#     }
-#   } else {
-#     warning(paste("Archivo no encontrado:", file))
-#   }
-# }
-# 
-# # Transpose the dataframe
-# KIRC <- data.frame(t(KIRC))
-# 
-# # Set column and row names
-# colnames(KIRC) <- KIRC[1,]  # Set column names as gene_ids
-# KIRC <- KIRC[-1,]  # Remove the first row
-# rownames(KIRC) <- paste0("KIRC_", 1:nrow(KIRC))  # Dynamically rename rows
-# 
-# # Merge the datasets
-# merge_data <- rbind(LAML, KIRC)
-# merge_data <- merge_data %>% mutate(type = ifelse(grepl("^LAML", rownames(merge_data)), "LAML", "KIRC"))
-# 
-# # Load the unknown data
-# unknown_data_path <- "data/unknwown_samples.tsv"
-# 
-# if (file.exists(unknown_data_path)) {
-#   unknown_data <- read.table(unknown_data_path, header = TRUE, sep = "\t")
-#   unknown_data <- t(unknown_data)
-#   colnames(unknown_data) <- unknown_data[1,]
-#   unknown_data <- unknown_data[-c(1,2),]
-#   unknown_data <- as.data.frame(unknown_data)
-# } else {
-#   warning(paste("El archivo de datos desconocidos no fue encontrado:", unknown_data_path))
-# }
-# 
-# # Show a preview of the combined data
-# # head(merge_data)
-# 
-# ```
-# ```{r}
-# library(dplyr)      # data manipulation
-# library(tidymodels) # modeling and tuning
-# library(randomForest)
-# library(ranger)
-# library(pROC)       # ROC curve
-# library(ggplot2)    # data visualization
-# 
-# # RANDOM FOREST ------------------------------------------------------------------
-# # FEATURE SELECTION
-# # Convert data to numeric format
-# LAML <- lapply(LAML, as.numeric)
-# KIRC <- lapply(KIRC, as.numeric)
-# LAML <- as.data.frame(LAML)
-# KIRC <- as.data.frame(KIRC)
-# 
-# # Calculate the absolute difference in gene expression between cancer types
-# expression_difference <- abs(apply(LAML, 2, mean) - apply(KIRC, 2, mean))
-# 
-# # Sort genes by expression difference
-# sorted_genes <- sort(expression_difference, decreasing = TRUE)
-# 
-# # Display descriptive statistics
-# range(expression_difference)
-# mean(expression_difference)
-# median(expression_difference)
-# 
-# # Select the top 50 genes with the highest expression difference
-# genes_dif <- head(sorted_genes, 50)
-# genes_dif <- as.data.frame(genes_dif)
-# top50genes <- rownames(genes_dif)
-# 
-# # Filter the dataset, keeping only the selected genes and the type variable
-# filtered <- merge_data[, c(top50genes, "type"), drop = FALSE]
-# 
-# # Training and test split
-# set.seed(2024)  # For reproducibility
-# training_indices <- sample(1:nrow(filtered), 0.7 * nrow(filtered))  # 70% of data for trainingo
-# test_indices <- setdiff(1:nrow(filtered), training_indices) # 30% for testing
-# 
-# train_data <- filtered[training_indices, ]
-# test_data <- filtered[test_indices, ]
-# 
-# # Convert genes to numeric and type variable to factor
-# train_data[, -ncol(train_data)] <- lapply(train_data[, -ncol(train_data)], as.numeric)
-# train_data[[ncol(train_data)]] <- as.factor(train_data[[ncol(train_data)]])
-# 
-# test_data[, -ncol(test_data)] <- lapply(test_data[, -ncol(test_data)], as.numeric)
-# test_data[[ncol(test_data)]] <- as.factor(test_data[[ncol(test_data)]])
-# 
-# # Define recipe
-# cancer_recipe <- recipe(type ~ ., data = train_data)
-# 
-# # Define Random Forest model
-# cancer_model <- rand_forest() %>% 
-#   set_args(mtry = tune()) %>% 
-#   set_engine("ranger", importance = "impurity") %>% 
-#   set_mode("classification")
-# 
-# # Define the tuning grid
-# cancer_grid <- expand.grid(mtry = c(5:15))
-# 
-# # Create workflow and cross-validation scheme
-# rf_workflow <- workflow() %>% 
-#   add_recipe(cancer_recipe) %>% 
-#   add_model(cancer_model)
-# 
-# training_cv <- vfold_cv(train_data) # 5 folds by default
-# 
-# # Perform hyperparameter tuning
-# set.seed(2024)
-# cancer_tune <- tune_grid(
-#   rf_workflow,
-#   resamples = training_cv,
-#   grid = cancer_grid
-# )
-# 
-# # Select the best model based on accuracy
-# best_cancer <- select_best(cancer_tune, metric = "accuracy")
-# final_cancer <- finalize_workflow(rf_workflow, best_cancer)
-# 
-# # Train the final model with the training data
-# cancer_fit <- final_cancer %>% 
-#   fit(train_data)
-# 
-# # Make predictions on the test data
-# predictions_cancer <- predict(cancer_fit, test_data, type = "class")
-# 
-# # Calculate model accuracy
-# cancer_accuracy <- mean(predictions_cancer$.pred_class == test_data$type)
-# print(paste("Accuracy Random Forest:", cancer_accuracy))
-# 
-# # ROC CURVE ----------------------------------------------------------------------
-# # Convert predictions to numeric for ROC
-# cancer_roc <- roc(test_data$type, as.numeric(predictions_cancer$.pred_class))
-# 
-# # Calculate and display AUC
-# auc_value <- auc(cancer_roc)
-# cat("Area under the curve (AUC):", auc_value, "\n")
-# 
-# # Plot the ROC curve with customized colors
-# plot(cancer_roc, 
-#      main = "Curva ROC - Random Forest", 
-#      col = "#E63946",  # Dark red
-#      lwd = 3,          # Line width
-#      print.auc = TRUE,
-#      auc.polygon = TRUE, 
-#      auc.polygon.col = rgb(1, 0, 0, alpha = 0.2))  # Transparent red shading
-# grid(col = "gray70")  # Add a light grid
-# 
-# ```
-# The test set prediction accuracy reached 100%, indicating a high likelihood of overfitting. Despite efforts to mitigate this by reducing tree depth, increasing the number of selected genes, and expanding the number of trees, overfitting persisted. Utilizing the full dataset along with all available genes could potentially help alleviate this issue.
-# 
-# ```{r}
-# library(dplyr)      # Data manipulation
-# library(tidymodels) # Model handling
-# library(ggplot2)    # Visualization
-# 
-# # PREDICTIONS OF THE UNKNOWN SAMPLES ---------------------------------------------------
-# 
-# # Ensure the unknown dataset contains the same top 50 genes
-# filtered_unknown <- unknown_data[, top50genes, drop = FALSE]
-# 
-# # Convert data to numeric
-# filtered_unknown <- mutate_all(filtered_unknown, as.numeric)
-# 
-# # Get class predictions and probabilities
-# predictions_uk <- predict(cancer_fit, filtered_unknown, type = "prob")
-# 
-# # Convert predictions to a data frame for easier handling
-# predictions_uk <- as.data.frame(predictions_uk)
-# 
-# # Get the class with the highest probability for each individual
-# predicted_class <- colnames(predictions_uk)[max.col(predictions_uk, ties.method = "first")]
-# 
-# # Get the probability of the predicted class
-# max_probability <- apply(predictions_uk, 1, max)
-# 
-# # Create the resulting table
-# result_table <- data.frame(
-#   Individual = rownames(filtered_unknown),
-#   Cancer_Class_Prediction = gsub('.pred_', '', predicted_class),  # Remove prefix
-#   Prediction_Probability = max_probability
-# )
-# 
-# # Print the resulting table
-# print(result_table)
-# 
-# # Visualization: Prediction Probabilities
-# ggplot(result_table, aes(x = Cancer_Class_Prediction, y = Prediction_Probability, fill = Cancer_Class_Prediction)) +
-#   geom_boxplot(alpha = 0.6, outlier.shape = NA) +  
-#   geom_jitter(width = 0.2, alpha = 0.8, size = 2) +  
-#   labs(title = "Prediction Probabilities for Unknown Samples",
-#        x = "Predicted Cancer Type",
-#        y = "Prediction Probability") +
-#   theme_minimal() +
-#   scale_fill_manual(values = c("#1f78b4", "#e31a1c"))  # Blue & Red for readability
-# 
-# # Set probability threshold (adjust as needed)
-# threshold <- 0.9  # Example: Only consider predictions with >90% confidence
-# 
-# # Count number of observations above the threshold
-# high_confidence_count <- sum(result_table$Prediction_Probability > threshold)
-# 
-# # Print the result
-# cat("We have", high_confidence_count, "observations with a probability higher than", threshold, ".\n")
+# Define the base folder using relative paths
+base_path_LAML <- here("data", "LAML100")
+base_path_BLCA <- here("data", "BLCA100")
+unknown_data_path <- here("data", "unknown_samples.tsv")
+
+# Obtain the list of .tsv files inside subfolders
+LAML_files <- list.files(base_path_LAML, pattern = "\\.tsv$", recursive = TRUE, full.names = TRUE)
+BLCA_files <- list.files(base_path_BLCA, pattern = "\\.tsv$", recursive = TRUE, full.names = TRUE)
+
+# Function to read and process files
+process_files <- function(files) {
+  dataset <- data.frame()
+  
+  for (i in seq_along(files)) {
+    file <- files[i]
+    
+    if (file.exists(file)) {
+      df <- read.table(file, header = TRUE, skip = 1, sep = "\t")
+      
+      # Ensure there are enough rows
+      if (nrow(df) > 4) {
+        df <- df[-c(1:4), ]
+      }
+      
+      # Select columns of interest if available
+      if ("gene_id" %in% colnames(df) && "tpm_unstranded" %in% colnames(df)) {
+        df_subset <- df[, c("gene_id", "tpm_unstranded")]
+        
+        # Merge datasets
+        dataset <- if (i == 1) df_subset else full_join(dataset, df_subset, by = "gene_id")
+      }
+    } else {
+      warning(paste("File not found:", file))
+    }
+  }
+  
+  return(dataset)
+}
+
+# Process LAML and BLCA datasets
+LAML <- process_files(LAML_files)
+BLCA <- process_files(BLCA_files)
+
+# Transpose the datasets
+LAML <- data.frame(t(LAML))
+BLCA <- data.frame(t(BLCA))
+
+# Set column names and row names
+colnames(LAML) <- LAML[1,]
+LAML <- LAML[-1,]
+rownames(LAML) <- paste0("LAML_", 1:nrow(LAML))
+
+colnames(BLCA) <- BLCA[1,]
+BLCA <- BLCA[-1,]
+rownames(BLCA) <- paste0("BLCA_", 1:nrow(BLCA))
+
+# Merge the datasets
+merge_data <- rbind(LAML, BLCA)
+merge_data <- merge_data %>% mutate(type = ifelse(grepl("^LAML", rownames(merge_data)), "LAML", "BLCA"))
+
+# Load unknown data
+if (file.exists(unknown_data_path)) {
+  unknown_data <- read.table(unknown_data_path, header = TRUE, sep = "\t")
+  unknown_data <- t(unknown_data)
+  colnames(unknown_data) <- unknown_data[1,]
+  unknown_data <- unknown_data[-c(1,2),]
+  unknown_data <- as.data.frame(unknown_data)
+} else {
+  warning(paste("Unknown data file not found:", unknown_data_path))
+}
+
+# Show a preview of the combined data
+#head(merge_data)
 
 ```
-We have 6 observations with a probability higher than 0.9. 
+
+```{r}
+ # RANDOM FOREST ---------------------------------------------------------
+
+# Convert datasets to numeric
+LAML <- lapply(LAML, as.numeric)
+BLCA <- lapply(BLCA, as.numeric)
+LAML <- as.data.frame(LAML)
+BLCA <- as.data.frame(BLCA)
+
+# Calculate absolute differences in gene expression
+expression_difference <- abs(apply(LAML, 2, mean) - apply(BLCA, 2, mean))
+
+# Sort genes by difference
+sorted_genes <- sort(expression_difference, decreasing = TRUE)
+
+# Select top 50 genes
+top50genes <- names(head(sorted_genes, 50))
+
+# Filter dataset
+filtered <- merge_data[, c(top50genes, "type"), drop = FALSE]
+
+# Train-test split
+set.seed(2024)
+training_indices <- sample(1:nrow(filtered), 0.7 * nrow(filtered))
+test_indices <- setdiff(1:nrow(filtered), training_indices)
+
+train_data <- filtered[training_indices, ]
+test_data <- filtered[test_indices, ]
+
+# Convert variables to correct types
+train_data[, -ncol(train_data)] <- lapply(train_data[, -ncol(train_data)], as.numeric)
+train_data[[ncol(train_data)]] <- as.factor(train_data[[ncol(train_data)]])
+
+test_data[, -ncol(test_data)] <- lapply(test_data[, -ncol(test_data)], as.numeric)
+test_data[[ncol(test_data)]] <- as.factor(test_data[[ncol(test_data)]])
+
+# Define recipe
+cancer_recipe <- recipe(type ~ ., data = train_data)
+
+# Define Random Forest model
+cancer_model <- rand_forest() %>%
+  set_args(mtry = tune()) %>%
+  set_engine("ranger", importance = "impurity") %>%
+  set_mode("classification")
+
+# Define tuning grid
+cancer_grid <- expand.grid(mtry = c(5:15))
+
+# Create workflow
+rf_workflow <- workflow() %>%
+  add_recipe(cancer_recipe) %>%
+  add_model(cancer_model)
+
+# Cross-validation
+training_cv <- vfold_cv(train_data)
+
+# Tune hyperparameters
+set.seed(2024)
+cancer_tune <- tune_grid(rf_workflow, resamples = training_cv, grid = cancer_grid)
+
+# Select the best model
+best_cancer <- select_best(cancer_tune, metric = "accuracy")
+final_cancer <- finalize_workflow(rf_workflow, best_cancer)
+
+# Train the final model
+cancer_fit <- final_cancer %>% fit(train_data)
+
+# Predictions
+predictions_cancer <- predict(cancer_fit, test_data, type = "class")
+
+# Calculate accuracy
+cancer_accuracy <- mean(predictions_cancer$.pred_class == test_data$type)
+print(paste("Accuracy Random Forest:", cancer_accuracy))
+
+# ROC Curve
+cancer_roc <- roc(test_data$type, as.numeric(predictions_cancer$.pred_class))
+auc_value <- auc(cancer_roc)
+cat("Area under the curve (AUC):", auc_value, "\n")
+
+# Plot ROC curve
+plot(cancer_roc, main = "ROC Curve - Random Forest",
+     col = "#E63946", lwd = 3, print.auc = TRUE,
+     auc.polygon = TRUE, auc.polygon.col = rgb(1, 0, 0, alpha = 0.2))
+grid(col = "gray70")
+
+```
+
+The test set prediction accuracy reached 100%, indicating a high likelihood of overfitting. Despite efforts to mitigate this by reducing tree depth, increasing the number of selected genes, and expanding the number of trees, overfitting persisted. Utilizing the full dataset along with all available genes could potentially help alleviate this issue.
+
+```{r}
+# PREDICTIONS FOR UNKNOWN SAMPLES ---------------------------------------------
+
+# Ensure unknown dataset contains the same top 50 genes
+filtered_unknown <- unknown_data[, top50genes, drop = FALSE]
+filtered_unknown <- mutate_all(filtered_unknown, as.numeric)
+
+# Get predictions and probabilities
+predictions_uk <- predict(cancer_fit, filtered_unknown, type = "prob")
+predictions_uk <- as.data.frame(predictions_uk)
+
+# Extract predicted class and probability
+predicted_class <- colnames(predictions_uk)[max.col(predictions_uk, ties.method = "first")]
+max_probability <- apply(predictions_uk, 1, max)
+
+# Create results table
+result_table <- data.frame(
+  Individual = rownames(filtered_unknown),
+  Cancer_Class_Prediction = gsub('.pred_', '', predicted_class),
+  Prediction_Probability = max_probability
+)
+
+# Print results
+print(result_table)
+
+# Visualization: Prediction Probabilities
+ggplot(result_table, aes(x = Cancer_Class_Prediction, y = Prediction_Probability, fill = Cancer_Class_Prediction)) +
+  geom_boxplot(alpha = 0.6, outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.8, size = 2) +
+  labs(title = "Prediction Probabilities for Unknown Samples",
+       x = "Predicted Cancer Type", y = "Prediction Probability") +
+  theme_minimal() +
+  scale_fill_manual(values = c("#1f78b4", "#e31a1c"))
+
+# Count predictions above threshold
+threshold <- 0.9
+high_confidence_count <- sum(result_table$Prediction_Probability >= threshold)
+cat("We have", high_confidence_count, "observations with a probability higher than", threshold, ".\n")
+
+```
+We have 4 observations with a probability higher than 0.9. 
+
 
 # session info {.unnumbered}
 
